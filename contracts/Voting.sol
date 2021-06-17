@@ -7,11 +7,12 @@ contract Voting {
     
     struct Voter {
         address voter_address;
-        Candidate voter_choice;
+        Options voter_choice;
         bool has_voted;
     }
 
-    uint public total_voters = 0;
+    uint public total_voters;
+    uint public voters_count = 0;
     uint public total_votes = 0;
     uint public time_voting_expires;
     address public admin;
@@ -20,12 +21,14 @@ contract Voting {
     string public contract_name;
 
     enum State { Created, Voting, Ended }
-    enum Candidate { option_1, option_2 }
+    enum Options { abstain, candidate_1, candidate_2 }
 
     State public state;
+    Options public winner;
 
-    mapping (Candidate => uint) private votes_per_candidate;
+    mapping (Options => uint) public votes_per_candidate;
     mapping(address => Voter) public voter_register;
+    address[] public voters;
     
     modifier onlyAdmin() {
         require(msg.sender == admin);
@@ -37,13 +40,14 @@ contract Voting {
         _;
     }
 
-    constructor() {
+    constructor(uint _totalVoters) {
         admin = msg.sender;
         state = State.Created;
-        
+        total_voters = _totalVoters;
     }
 
-    event Result(string voting_result, string message, uint total_votes, uint total_voters);
+    event Start_vote(uint indexed time_started, uint indexed time_expires);
+    event Result(Options voting_winner, string message, uint total_votes, uint voters_count);
 
     function addVoter(address _voterAddress) public onlyAdmin() inState(State.Created) {
         // improve it by passing an array instead of one by one
@@ -51,30 +55,37 @@ contract Voting {
         voter.voter_address = _voterAddress;
         // check if there is need to define as false the other 2 fields
         voter_register[_voterAddress] = voter;
-        total_voters ++;
+        voters.push(_voterAddress);
+        voters_count ++;
     }
 
     function startVote() external inState(State.Created) onlyAdmin() returns(bool){
+        // require statement to check that all the voters are added and allowed to vote
+        require(total_voters == voters.length, 'all the voters should be registered');
         state = State.Voting;
         // from the moment the election is going to last 1 day
         time_voting_expires = block.timestamp + 86400;
+        emit Start_vote(block.timestamp, time_voting_expires);
         return true;
     }
     
-    function voting (Candidate _choice) external inState(State.Voting) returns(bool) {
+    function vote (Options _choice) external inState(State.Voting) returns(bool) {
         require (block.timestamp < time_voting_expires, 'election has expired');
-        require (_choice == Candidate.option_1 || _choice == Candidate.option_2, 'your choice has to be one of the candidates');
+        require (_choice == Options.abstain || _choice == Options.candidate_1 || _choice == Options.candidate_2, 'your choice has to be one of the candidates');
         Voter storage voter = voter_register[msg.sender];
 
         require(voter.voter_address == msg.sender && !voter.has_voted);
 
         // if statements to keep track of each candidate
-        if (_choice == Candidate.option_1) {
-            voter.voter_choice = Candidate.option_1;
-            votes_per_candidate[Candidate.option_1] += 1;  
+        if (_choice == Options.candidate_1) {
+            voter.voter_choice = Options.candidate_1;
+            votes_per_candidate[Options.candidate_1] ++;  
+        } else if (_choice == Options.candidate_2) {
+            voter.voter_choice = Options.candidate_2;
+            votes_per_candidate[Options.candidate_2] ++;
         } else {
-            voter.voter_choice = Candidate.option_2;
-            votes_per_candidate[Candidate.option_2] += 1;
+            voter.voter_choice = Options.abstain;
+            votes_per_candidate[Options.abstain] ++;
         }
 
         voter.has_voted = true;
@@ -85,26 +96,28 @@ contract Voting {
     function endVoting() external onlyAdmin() inState(State.Voting) returns(bool){
         require (block.timestamp >= time_voting_expires, 'too early, election has to continue');
         string memory message;
-        string memory winner;
 
-        uint votes_candidate_1 = votes_per_candidate[Candidate.option_1];
-        uint votes_candidate_2 = votes_per_candidate[Candidate.option_2];
+        uint votes_candidate_1 = votes_per_candidate[Options.candidate_1];
+        uint votes_candidate_2 = votes_per_candidate[Options.candidate_2];
 
         if (votes_candidate_1 == votes_candidate_2) {
             message = 'Both candidates have the same amount of votes';
-            winner = 'No winner';
+            winner = Options.abstain;
         } else if (votes_candidate_1 > votes_candidate_2) {
             message = 'candidate 1 have won'; 
-            winner = 'Candidate 1';
+            winner = Options.candidate_1;
         } else {
             message = 'candidate 2 have won'; 
-            winner = 'Candidate 2';
+            winner = Options.candidate_2;
         }
 
-        emit Result(winner, message, total_votes, total_voters);
+        emit Result(winner, message, total_votes, voters_count);
 
         state = State.Ended;
         return true;
     }
 
+    function getVoters () external view returns (address[] memory) {
+        return voters;
+    }
 }
