@@ -20,9 +20,12 @@ require('chai')
     .use(require('chai-as-promised'))
     .should()
 
-contract('Voting', ([admin, voter1, voter2, voter3]) => {
+contract('Voting', ([admin, voter1, voter2, voter3, voter4, voter5, voter6]) => {
 
     let voting, time_start;
+    const voters = [voter1, voter2, voter3]
+    const voters_2 = [voter4, voter5, voter6]
+
     beforeEach(async () => {
         voting = await Voting.deployed();
     })
@@ -46,31 +49,26 @@ contract('Voting', ([admin, voter1, voter2, voter3]) => {
     })
 
     describe('functionality', async () => {
+        it('admin should not be abe to start the voting without registering all the voters', async () => {
+            await voting.startVote({from:admin}).should.be.rejected
+        })
+        it('should not allow someone different from the admin to add voters', async () => {
+            await voting.addVoters(voters, {from:voter1}).should.be.rejected
+        })
         it('should allow admin to add voters correctly', async () => {
-            await voting.addVoter(voter1, {from:admin})
+            await voting.addVoters(voters, {from:admin})
             const voter = await voting.voter_register(voter1)
             assert.equal(voter.voter_address, voter1, 'voters address has to match')
             assert.equal(voter.voter_choice, Options.abstain, 'default value has to be abstain')
             expect(voter.has_voted).to.be.false
         })
-        it('voters_count should increase by 1 after adding a voter', async () => {
-            const count_before = await voting.voters_count()
-            await voting.addVoter(voter2, {from: admin})
-            const count_after = await voting.voters_count()
-            const increase = count_after - count_before
-            assert.equal(increase, 1, 'should increase by 1')
-        })
-        it('should not allow someone different from the admin to add voters', async () => {
-            await voting.addVoter(voter2, {from:voter1}).should.be.rejected
-        })
-        it('admin should not be abe to start the voting without registering all the voters', async () => {
-            await voting.startVote({from:admin}).should.be.rejected
+        it('after voters were added, admin should not be able to change the list', async () => {
+            await voting.addVoters(voters_2, {from: admin}).should.be.rejected
         })
         it('voters should not be able to vote before admin starts the voting period', async () => {
             await voting.vote(Options.candidate_1, {from: voter1}).should.be.rejected
         })
-        it('admin should be abe to start the voting after registering all the voters', async () => {
-            await voting.addVoter(voter3, {from:admin})
+        it('admin should be able to start the voting after registering all the voters', async () => {
             const start = await voting.startVote({from:admin}).should.be.fulfilled
             time_start = await time.latest()
             const time_expires = await voting.time_voting_expires()
@@ -91,14 +89,25 @@ contract('Voting', ([admin, voter1, voter2, voter3]) => {
             assert.equal(voter_1.voter_address, voter1, 'voters address has to match')
             assert.equal(voter_1.voter_choice, Options.candidate_1, 'default value has to be abstain')
             expect(voter_1.has_voted).to.be.true
+
+            await voting.vote(Options.candidate_1, {from: voter2}).should.be.fulfilled
+            const voter_2 = await voting.voter_register(voter2)
+            assert.equal(voter_2.voter_address, voter2, 'voters address has to match')
+            assert.equal(voter_2.voter_choice, Options.candidate_1, 'default value has to be abstain')
+            expect(voter_2.has_voted).to.be.true
+
+            await voting.vote(Options.candidate_2, {from: voter3}).should.be.fulfilled
+            const voter_3 = await voting.voter_register(voter3)
+            assert.equal(voter_3.voter_address, voter3, 'voters address has to match')
+            assert.equal(voter_3.voter_choice, Options.candidate_2, 'default value has to be abstain')
+            expect(voter_3.has_voted).to.be.true
+
             const candidate_1_votes = await voting.votes_per_candidate(Options.candidate_1)
-            assert.equal(candidate_1_votes, 1, 'candidate 1 should have 1 vote')
+            assert.equal(candidate_1_votes, 2, 'candidate 1 should have 2 votes')
             const candidate_2_votes = await voting.votes_per_candidate(Options.candidate_2)
-            assert.equal(candidate_2_votes, 0, 'candidate 2 should have 0 votes')
+            assert.equal(candidate_2_votes, 1, 'candidate 2 should have 1 vote')
             const abstain_votes = await voting.votes_per_candidate(Options.abstain)
             assert.equal(abstain_votes, 0, 'abstain votes should be equal to 0')
-            await voting.vote(Options.candidate_1, {from: voter2}).should.be.fulfilled
-            await voting.vote(Options.candidate_2, {from: voter3}).should.be.fulfilled
         })
         it('admin should not be able to end the voting period earlier', async() => {
             await voting.endVoting({from: admin}).should.be.rejected

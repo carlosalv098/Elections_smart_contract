@@ -12,7 +12,7 @@ contract Voting {
     }
 
     uint public total_voters;
-    uint public voters_count = 0;
+    //uint public voters_count = 0;
     uint public total_votes = 0;
     uint public time_voting_expires;
     address public admin;
@@ -49,21 +49,24 @@ contract Voting {
     event Start_vote(uint indexed time_started, uint indexed time_expires);
     event Result(Options voting_winner, string message, uint total_votes, uint voters_count);
 
-    function addVoter(address _voterAddress) public onlyAdmin() inState(State.Created) {
-        // improve it by passing an array instead of one by one
+    function addVoters(address[] memory _voterAddresses) external onlyAdmin() inState(State.Created) {
+        require(voters.length == 0, 'voters array must be empty');
+        require(_voterAddresses.length == total_voters, 'array must contain all the voters defined in the constructor');
+       
         Voter memory voter;
-        voter.voter_address = _voterAddress;
-        // check if there is need to define as false the other 2 fields
-        voter_register[_voterAddress] = voter;
-        voters.push(_voterAddress);
-        voters_count ++;
+        for (uint i = 0; i < _voterAddresses.length ; i ++) {
+            voter.voter_address = _voterAddresses[i];
+            voter_register[_voterAddresses[i]] = voter;
+            voters.push(_voterAddresses[i]);
+            //voters_count ++;
+        }
     }
 
     function startVote() external inState(State.Created) onlyAdmin() returns(bool){
         // require statement to check that all the voters are added and allowed to vote
         require(total_voters == voters.length, 'all the voters should be registered');
         state = State.Voting;
-        // from the moment the election is going to last 1 day
+        // from this moment the election is going to last 1 day
         time_voting_expires = block.timestamp + 86400;
         emit Start_vote(block.timestamp, time_voting_expires);
         return true;
@@ -76,7 +79,8 @@ contract Voting {
 
         require(voter.voter_address == msg.sender && !voter.has_voted);
 
-        // if statements to keep track of each candidate
+        // if statements to keep track of each candidate or abstentions
+
         if (_choice == Options.candidate_1) {
             voter.voter_choice = Options.candidate_1;
             votes_per_candidate[Options.candidate_1] ++;  
@@ -111,7 +115,7 @@ contract Voting {
             winner = Options.candidate_2;
         }
 
-        emit Result(winner, message, total_votes, voters_count);
+        emit Result(winner, message, total_votes, voters.length);
 
         state = State.Ended;
         return true;
